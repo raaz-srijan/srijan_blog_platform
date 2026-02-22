@@ -1,18 +1,16 @@
 const Blog = require("../models/blogSchema");
+const Like = require("../models/likeSchema"); 
 const { uploadImage, deleteImagefromCloudinary } = require("../utils/uploadImage");
 
 async function addBlog(req, res) {
     try {
         const userId = req.user?.id;
-        if (!userId)
-            return res.status(403).json({ success: false, message: "Login first" });
+        if (!userId) return res.status(403).json({ success: false, message: "Login first" });
 
         const { title, content, draft, tags } = req.body;
-        if (!title || !title.trim())
-            return res.status(400).json({ success: false, message: "Post should have a title" });
+        if (!title || !title.trim()) return res.status(400).json({ success: false, message: "Post should have a title" });
 
         let imagesData = [];
-
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
                 const result = await uploadImage(file.path);
@@ -30,14 +28,11 @@ async function addBlog(req, res) {
             content: content?.trim() || "",
             draft: Boolean(draft),
             tags: parsedTags,
-            images: imagesData, 
+            images: imagesData,
+            likesCount: 0,
         });
 
-        return res.status(201).json({
-            success: true,
-            message: "Blog created successfully",
-            blog: newBlog,
-        });
+        return res.status(201).json({ success: true, message: "Blog created successfully", blog: newBlog });
 
     } catch (error) {
         return res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
@@ -47,8 +42,7 @@ async function addBlog(req, res) {
 async function updateBlog(req, res) {
     try {
         const userId = req.user?.id;
-        if (!userId)
-            return res.status(403).json({ success: false, message: "Login first" });
+        if (!userId) return res.status(403).json({ success: false, message: "Login first" });
 
         const { blogId } = req.params;
         const { title, content, draft, tags } = req.body;
@@ -81,7 +75,6 @@ async function updateBlog(req, res) {
         }
 
         const updatedBlog = await Blog.findByIdAndUpdate(blogId, { $set: updatedData }, { new: true });
-
         return res.status(200).json({ success: true, message: "Blog updated successfully", blog: updatedBlog });
 
     } catch (error) {
@@ -105,6 +98,8 @@ async function deleteBlog(req, res) {
                 if (img.public_id) await deleteImagefromCloudinary(img.public_id);
             }
         }
+
+        await Like.deleteMany({ blogId });
 
         await Blog.findByIdAndDelete(blogId);
         return res.status(200).json({ success: true, message: "Blog deleted successfully" });
@@ -131,6 +126,9 @@ async function fetchBlogById(req, res) {
 
         if (blog.draft && blog.userId._id.toString() !== req.user?.id)
             return res.status(403).json({ success: false, message: "You are not authorized to view this blog" });
+
+        blog.likesCount = await Like.countDocuments({ blogId });
+        await blog.save();
 
         return res.status(200).json({ success: true, blog });
 
