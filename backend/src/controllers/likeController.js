@@ -16,8 +16,7 @@ async function likeBlog(req, res) {
 
         await Like.create({ userId, blogId });
 
-        blog.likesCount = blog.likesCount + 1;
-        await blog.save();
+        await Blog.findByIdAndUpdate(blogId, { $inc: { likesCount: 1 } });
 
         return res.status(200).json({ success: true, message: "Blog liked successfully" });
 
@@ -36,13 +35,9 @@ async function unlikeBlog(req, res) {
         const like = await Like.findOne({ userId, blogId });
         if (!like) return res.status(400).json({ success: false, message: "You have not liked this blog" });
 
-        await like.remove();
+        await like.deleteOne();
 
-        const blog = await Blog.findById(blogId);
-        if (blog && blog.likesCount > 0) {
-            blog.likesCount = blog.likesCount - 1;
-            await blog.save();
-        }
+        await Blog.findByIdAndUpdate(blogId, { $inc: { likesCount: -1 } });
 
         return res.status(200).json({ success: true, message: "Blog unliked successfully" });
 

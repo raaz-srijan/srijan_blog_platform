@@ -1,6 +1,8 @@
 const Blog = require("../models/blogSchema");
-const Like = require("../models/likeSchema"); 
+const Like = require("../models/likeSchema");
+const Comment = require("../models/commentSchema");
 const { uploadImage, deleteImagefromCloudinary } = require("../utils/uploadImage");
+const { getPaginationOptions, getPaginationMetaData } = require("../utils/pagination");
 
 async function addBlog(req, res) {
     try {
@@ -100,6 +102,7 @@ async function deleteBlog(req, res) {
         }
 
         await Like.deleteMany({ blogId });
+        await Comment.deleteMany({ blogId });
 
         await Blog.findByIdAndDelete(blogId);
         return res.status(200).json({ success: true, message: "Blog deleted successfully" });
@@ -111,8 +114,33 @@ async function deleteBlog(req, res) {
 
 async function fetchBlogs(req, res) {
     try {
-        const blogs = await Blog.find({ draft: false }).populate("userId", "name").sort({ createdAt: -1 });
-        return res.status(200).json({ success: true, count: blogs.length, blogs });
+        const { page, limit, skip } = getPaginationOptions(req, 10);
+
+        const { search, tag } = req.query;
+        let query = { draft: false };
+
+        if (search) {
+            query.title = { $regex: search, $options: "i" };
+        }
+        if (tag) {
+            query.tags = { $in: [tag.toLowerCase()] };
+        }
+
+        const blogs = await Blog.find(query)
+            .populate("userId", "name avatar")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const total = await Blog.countDocuments(query);
+        const meta = getPaginationMetaData(total, limit, page);
+
+        return res.status(200).json({
+            success: true,
+            count: blogs.length,
+            ...meta,
+            blogs
+        });
     } catch (error) {
         return res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
     }
@@ -142,8 +170,22 @@ async function fetchOwnedBlog(req, res) {
         const userId = req.user?.id;
         if (!userId) return res.status(403).json({ success: false, message: "Login first" });
 
-        const blogs = await Blog.find({ userId }).sort({ createdAt: -1 });
-        return res.status(200).json({ success: true, count: blogs.length, blogs });
+        const { page, limit, skip } = getPaginationOptions(req, 10);
+
+        const blogs = await Blog.find({ userId })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const total = await Blog.countDocuments({ userId });
+        const meta = getPaginationMetaData(total, limit, page);
+
+        return res.status(200).json({
+            success: true,
+            count: blogs.length,
+            ...meta,
+            blogs
+        });
 
     } catch (error) {
         return res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });

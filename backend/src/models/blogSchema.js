@@ -19,14 +19,16 @@ const blogSchema = new mongoose.Schema(
       trim: true,
     },
 
-    images: {
-      url: {
-        type: String,
+    images: [
+      {
+        url: {
+          type: String,
+        },
+        public_id: {
+          type: String,
+        },
       },
-      public_id: {
-        type: String,
-      },
-    },
+    ],
 
     likesCount: {
       type: Number,

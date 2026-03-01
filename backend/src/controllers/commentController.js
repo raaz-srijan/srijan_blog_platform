@@ -1,5 +1,7 @@
 const Comment = require("../models/commentSchema");
 const Blog = require("../models/blogSchema");
+const User = require("../models/userSchema");
+const { getPaginationOptions, getPaginationMetaData } = require("../utils/pagination");
 
 async function addComment(req, res) {
     try {
@@ -33,9 +35,14 @@ async function fetchComments(req, res) {
         const { blogId } = req.params;
         if (!blogId) return res.status(400).json({ success: false, message: "Blog ID is required" });
 
+        const { page, limit, skip } = getPaginationOptions(req, 20);
+
+        // Note: For advanced nested comments, root-level pagination is tricky without an aggregation pipeline,
+        // but limiting raw record fetching prevents memory exhaustion on large threads.
         const comments = await Comment.find({ blogId })
-            .populate("userId", "name email")
-            .sort({ createdAt: 1 });
+            .populate("userId", "name email avatar")
+            .sort({ createdAt: 1 })
+            .limit(limit * page);
 
         const commentMap = {};
         const roots = [];
@@ -72,7 +79,20 @@ async function deleteComment(req, res) {
         if (!comment) return res.status(404).json({ success: false, message: "Comment not found" });
 
         if (comment.userId.toString() !== userId) {
-            return res.status(403).json({ success: false, message: "You are not authorized to delete this comment" });
+            // Check if they are authorized administrators trying to moderate another user's comment
+            const userAccount = await User.findById(userId).populate({
+                path: 'roleId',
+                populate: { path: 'permissions', model: 'Permission' }
+            });
+
+            const isSuperAdmin = userAccount?.roleId?.name?.toLowerCase() === 'super_admin';
+            const hasModeratorPerm = isSuperAdmin || (userAccount?.roleId?.permissions || []).some(
+                p => p.name.toLowerCase() === 'delete_comment'
+            );
+
+            if (!hasModeratorPerm) {
+                return res.status(403).json({ success: false, message: "You are not authorized to delete this comment" });
+            }
         }
 
         await Comment.deleteMany({ $or: [{ _id: commentId }, { parentCommentId: commentId }] });
